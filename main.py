@@ -62,15 +62,23 @@ def Classifier_alg(alg):
 
 def Dataloader(args):
     # make data loader
-    cifar100loader = CIFAR100Loader(args = args)
-    #tinyimagenetloader = TinyImageNetLoader(args = args)
-    #imageNet100Loader = ImageNet100Loader(args = args)
+    if args.dataset == 'cifar100':
+        cifar100loader = CIFAR100Loader(args = args)
+        train_loader, test_loader, test_old_loader, test_all_loader = cifar100loader.makeHappyLoader()
+
+    elif args.dataset == 'tinyimagenet':
+        tinyimagenetloader = TinyImageNetLoader(args = args)
+        train_loader, test_loader, test_old_loader, test_all_loader = tinyimagenetloader.makeHappyLoader()
+
+    elif args.dataset == 'imagenet100':
+        imageNet100Loader = ImageNet100Loader(args = args)
+        train_loader, test_loader, test_old_loader, test_all_loader = imageNet100Loader.makeHappyLoader()
+    
+    else:
+        raise ValueError('Dataset not supported')
         
     #train_loader, test_loader, test_old_loader, test_all_loader = makeMetaGCDLoader()
     #train_loader, test_loader, test_old_loader, test_all_loader = makeClassIncrementalLoader()
-    train_loader, test_loader, test_old_loader, test_all_loader = cifar100loader.makeHappyLoader()
-    #train_loader, test_loader, test_old_loader, test_all_loader = tinyimagenetloader.makeHappyLoader()
-    #train_loader, test_loader, test_old_loader, test_all_loader = imageNet100Loader.makeHappyLoader()
 
     #train_loader, test_loader, test_old_loader, test_all_loader = cifar100loader.makeMetaGCDLoader()
     #train_loader, test_loader, test_old_loader, test_all_loader = cifar100loader.makeClassIncrementalLoader()
@@ -82,7 +90,7 @@ if __name__ == '__main__':
     # Parse the arguments
     parser = argparse.ArgumentParser(description='Generalized Class Incremental Learning')
     parser.add_argument('--dataset', type=str, default='cifar100', help='Dataset to learn')
-    parser.add_argument('--data_dir', type=str, default='dataloaders/datas/cifar100', help='Directory to the data')
+    parser.add_argument('--data_dir', type=str, default='datasets/cifar100', help='Directory to the data')
     parser.add_argument('--pretrained_model_name', type=str, default='dino-vitb16', help='Name of the model')
     parser.add_argument('--base', type=int, default=50, help='Number of base classes')
     parser.add_argument('--increment', type=int, default=10, help='Number of incremental classes')
@@ -92,7 +100,7 @@ if __name__ == '__main__':
     parser.add_argument('--classifier-alg', type=str, default='mngmm', help='Classifier algorithm')
     parser.add_argument('--num_classes', type=int, default=100, help='Number of classes for the classifier')
     parser.add_argument('--num_dim', type=int, default=384, help='Number of features\' dim for the classifier')
-    parser.add_argument('--with_early_stop', type=bool, default=True, help='Whether to use early stop')
+    parser.add_argument('--with_early_stop', default=True, action=argparse.BooleanOptionalAction, help='Whether to use early stop')
     args = parser.parse_args()
 
     # Set the random seed

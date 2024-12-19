@@ -90,6 +90,9 @@ if __name__ == '__main__':
     parser.add_argument('--trail_name', type=str, default=f'', help='Name of the trail')
     parser.add_argument('--clustering-alg', type=str, default='gmm', help='Clustering algorithm')
     parser.add_argument('--classifier-alg', type=str, default='mngmm', help='Classifier algorithm')
+    parser.add_argument('--num_classes', type=int, default=100, help='Number of classes for the classifier')
+    parser.add_argument('--num_dim', type=int, default=384, help='Number of features\' dim for the classifier')
+    parser.add_argument('--with_early_stop', type=bool, default=True, help='Whether to use early stop')
     args = parser.parse_args()
 
     # Set the random seed
@@ -110,11 +113,11 @@ if __name__ == '__main__':
         os.makedirs(f"logs/{log_saved_dir}/saved_models")
 
     # same classifier for all stages, static expension
-    s_classifier = Classifier(num_classes=100, num_dim=384, num_samples=0, grid_bounds=(-10., 10.))
+    s_classifier = Classifier(num_classes=args.num_classes, num_dim=args.num_dim, with_early_stop=args.with_early_stop)
     # for tinyimagenet
     #s_classifier = Classifier(num_classes=200, num_dim=384, num_samples=0, grid_bounds=(-10., 10.))
 
-    s_classifier.init_parameters(n_epochs=1000, lr=5e-6, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128)
+    s_classifier.init_parameters(n_epochs=1500, lr=4e-6, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128)
 
     for i, (train_data, test_data, test_old_data, test_all_data) in enumerate(zip(train_loader, test_loader, test_old_loader, test_all_loader)): 
         if i == 0:

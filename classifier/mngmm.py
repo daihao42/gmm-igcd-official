@@ -30,8 +30,7 @@ from tqdm import tqdm
 
 class MNGMMClassifier():
 
-    def __init__(self, num_samples, num_dim, num_classes, grid_bounds=(-10., 10.)):
-        self.num_samples = num_samples
+    def __init__(self, num_dim, num_classes, with_early_stop):
         self.num_dim = num_dim
         self.num_classes = num_classes
         print(f"num_classes: {num_classes}")
@@ -42,7 +41,8 @@ class MNGMMClassifier():
 
         self.label_offset = 0
 
-        self.support_size = np.ones(num_classes) * 1e-3
+        self.with_early_stop = with_early_stop
+
 
     def update_dir_infos(self, log_dir = "logs/", save_dir = "saved_models/"):
         self.writer = SummaryWriter(log_dir)
@@ -124,7 +124,7 @@ class MNGMMClassifier():
                 print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%,",
                       f" test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}")
 
-            if(early_stop_flag):
+            if(self.with_early_stop & early_stop_flag):
                 print("Early stopping due to covariance convergence.")
 
                 correct, total, acc = self.calculate_acc(self.svi.get_params(self.svi_state), X, y)
@@ -138,8 +138,8 @@ class MNGMMClassifier():
 
                 self.writer.add_scalar(f"{log_prefix}/Covariance/det_0", dets[1].item(), step)
 
-                print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%, \
-                      test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}")
+                print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%,",
+                      f" test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}")
 
                 break
                 
@@ -152,9 +152,9 @@ class MNGMMClassifier():
         return self.svi.get_params(self.svi_state)
 
 
-    def pre_processing(self, features, labels, n_components=384):
+    def pre_processing(self, features, labels):
         if self.pca is None:
-            self.pca = PCA(n_components=n_components)
+            self.pca = PCA(n_components=self.num_dim)
             features = self.pca.fit_transform(features)
         else:
             features = self.pca.transform(features)
@@ -177,7 +177,7 @@ class MNGMMClassifier():
 
             print(f"Number of Novel Samples: {novel_idx.sum()} / {len(features)}")
 
-            self.writer.add_scalar(f"Number/NovelSamples", novel_idx.sum(), current_stage)
+            self.writer.add_scalar(f"Number/NovelSamples", novel_idx.sum().item(), current_stage)
             self.writer.add_scalar(f"Number/TotalSamples", len(features), current_stage)
 
             self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning")
@@ -228,7 +228,9 @@ class MNGMMClassifier():
         early_stop_flag = False
 
         if(not jnp.isnan(dets[0])):
-            if (dets[0] > dets[1]):
+            if((dets[0] > 1) & (dets[1] > dets[0])):
+                early_stop_flag = True
+            if((dets[0] < 1) & (dets[1] < dets[0])):
                 early_stop_flag = True
         return early_stop_flag, dets
 

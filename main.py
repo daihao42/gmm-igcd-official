@@ -20,6 +20,7 @@ from dataloaders.imagenet100 import ImageNet100Loader
 
 from classifier.pegmm import PEGMMClassifier
 from classifier.mpegmm import MPEGMMClassifier
+from classifier.ngmm import NGMMClassifier
 from classifier.mngmm import MNGMMClassifier
 from classifier.mngmm_diag import MNGMMDiagClassifier
 
@@ -56,6 +57,8 @@ def Classifier_alg(alg):
         return MNGMMClassifier
     elif alg == 'mngmm_diag':
         return MNGMMDiagClassifier
+    elif alg == 'ngmm':
+        return NGMMClassifier
     else:
         raise ValueError('Classifier algorithm not supported')
 
@@ -96,8 +99,8 @@ if __name__ == '__main__':
     parser.add_argument('--increment', type=int, default=10, help='Number of incremental classes')
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
     parser.add_argument('--trail_name', type=str, default=f'', help='Name of the trail')
-    parser.add_argument('--clustering-alg', type=str, default='gmm', help='Clustering algorithm')
-    parser.add_argument('--classifier-alg', type=str, default='mngmm', help='Classifier algorithm')
+    parser.add_argument('--clustering_alg', type=str, default='gmm', help='Clustering algorithm')
+    parser.add_argument('--classifier_alg', type=str, default='mngmm', help='Classifier algorithm')
     parser.add_argument('--num_classes', type=int, default=100, help='Number of classes for the classifier')
     parser.add_argument('--num_dim', type=int, default=384, help='Number of features\' dim for the classifier')
     parser.add_argument('--with_early_stop', default=True, action=argparse.BooleanOptionalAction, help='Whether to use early stop')

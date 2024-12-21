@@ -3,7 +3,8 @@ import numpy as np
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
-from numpyro.infer import SVI, Trace_ELBO
+from numpyro.infer import SVI
+from numpyro.infer import Trace_ELBO
 import optax
 from jax import random
 import jax
@@ -27,6 +28,8 @@ from prettytable import PrettyTable
 #config.update("jax_enable_x64", True)
 
 from tqdm import tqdm
+
+from utils.custom_elbo import CustomELBO
 
 class MNGMMClassifier():
 
@@ -59,7 +62,7 @@ class MNGMMClassifier():
 
         self.writer = SummaryWriter(log_dir)
 
-    def model(self, X, y=None, num_classes=2, global_params=None):
+    def model(self, X, y=None, num_classes=2, global_params=None, **kwargs):
         num_features = X.shape[1]
 
         if global_params is None:
@@ -98,17 +101,20 @@ class MNGMMClassifier():
 
         optimizer = numpyro.optim.optax_to_numpyro(optax.adam(scheduler))
 
+        #self.svi = SVI(self.model, guide=self.guide, optim=optimizer, loss=CustomELBO())
         self.svi = SVI(self.model, guide=self.guide, optim=optimizer, loss=Trace_ELBO())
 
         self.svi_state = self.svi.init(random.PRNGKey(0), X = X, y= y, num_classes=self.num_classes, global_params=self.global_params)
 
         for step in tqdm(range(self.num_steps)):
-            self.svi_state, loss = self.svi.update(self.svi_state, X= X, y=y, num_classes=self.num_classes)
 
-            self.writer.add_scalar(f"{log_prefix}/Loss/train", loss.item(), step) 
-
+            # to-do : add increment as a parameter
             early_stop_flag, dets = self.calculate_metrics_on_covariances(self.svi.get_params(self.svi_state), increment=10)
 
+            self.svi_state, loss = self.svi.update(self.svi_state, X= X, y=y, num_classes=self.num_classes, covs_dets =dets)
+
+            self.writer.add_scalar(f"{log_prefix}/Loss/train", loss.item(), step) 
+            
             if step % 100 == 0:
                 correct, total, acc = self.calculate_acc(self.svi.get_params(self.svi_state), X, y)
                 correct_test, total_test, acc_test = self.calculate_acc(self.svi.get_params(self.svi_state), test_X, test_y)
@@ -180,6 +186,9 @@ class MNGMMClassifier():
             self.writer.add_scalar(f"Number/NovelSamples", novel_idx.sum().item(), current_stage)
             self.writer.add_scalar(f"Number/TotalSamples", len(features), current_stage)
 
+            features = features[novel_idx]
+            labels = labels[novel_idx]
+
             self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning")
         
         self.global_params = copy.deepcopy(self.params)
@@ -222,10 +231,17 @@ class MNGMMClassifier():
 
     def calculate_metrics_on_covariances(self, params, increment):
         class_covs = params["class_covs"]
-        dets = [jax.vmap(jnp.linalg.det)(class_covs[:self.label_offset]).mean(), 
-                jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment]).mean()]
 
         early_stop_flag = False
+
+        if self.global_params is None:
+            return early_stop_flag, [jnp.ones(1),
+                                     jnp.ones(1)]
+
+        global_class_covs = self.global_params["class_covs"]
+
+        dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.label_offset])).mean(), 
+                (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
 
         if(not jnp.isnan(dets[0])):
             if((dets[0] > 1) & (dets[1] > dets[0])):
@@ -239,7 +255,6 @@ class MNGMMClassifier():
         self.train(features, labels, test_features, test_labels, current_stage)
 
         t = PrettyTable(['TestSet','Correct', 'Smaples', 'Accuracy'])
-        t = PrettyTable(['All', 'Old', 'Novel', 'S0'])
 
         correct, total, acc = self.test(testing_set['test_all']._x, testing_set['test_all']._y)
         t.add_row(["All", correct, total, acc])

@@ -28,7 +28,7 @@ from prettytable import PrettyTable
 
 from tqdm import tqdm
 
-class MNGMMDiagClassifier():
+class NGMMClassifier():
 
     def __init__(self, num_dim, num_classes, with_early_stop):
         self.num_dim = num_dim
@@ -65,21 +65,19 @@ class MNGMMDiagClassifier():
         if global_params is None:
             class_means = numpyro.param("class_means", jnp.zeros((num_classes, num_features)))
             # Use a diagonal covariance to reduce complexity
-            class_covs = numpyro.param("class_covs", jnp.ones((num_classes, num_features)))
+            #class_covs = numpyro.param("class_covs", jnp.ones((num_classes, num_features)))
+            class_covs = numpyro.param("class_covs", jnp.stack([jnp.eye(num_features)] * num_classes))
         else :
             class_means = numpyro.param("class_means", global_params["class_means"])
             class_covs = numpyro.param("class_covs", global_params["class_covs"])
- 
         
         with numpyro.plate("batch", X.shape[0], subsample_size=self.batch_size) as ind:
             X_batch = X[ind]
             y_batch = y[ind] if y is not None else None
             
             if y_batch is not None:
-                base_dist = dist.MultivariateNormal(class_means[y_batch], jax.vmap(jnp.diag)(class_covs[y_batch]))
+                base_dist = dist.MultivariateNormal(class_means[y_batch], class_covs[y_batch])
                 numpyro.sample("obs", base_dist, obs=X_batch)
-
-
 
 
     def run_inference(self, X, y, test_X, test_y, log_prefix=""):
@@ -171,19 +169,6 @@ class MNGMMDiagClassifier():
 
         self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Flearning")
 
-        pred_labels, _ =self._predict(jnp.array(features), self.params)
-
-        if self.global_params is not None:
-
-            novel_idx = pred_labels >= self.label_offset
-
-            print(f"Number of Novel Samples: {novel_idx.sum()} / {len(features)}")
-
-            self.writer.add_scalar(f"Number/NovelSamples", novel_idx.sum().item(), current_stage)
-            self.writer.add_scalar(f"Number/TotalSamples", len(features), current_stage)
-
-            self.params = self.run_inference(jnp.array(features), jnp.array(pred_labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning")
-        
         self.global_params = copy.deepcopy(self.params)
 
 

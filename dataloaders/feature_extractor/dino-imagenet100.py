@@ -12,7 +12,9 @@ import numpy as np
 
 import os
 
-def infer_features_labels(dino, data_loader, features_dir, labels_dir, device):
+from sl_finetuned_model import finetune_dino
+
+def infer_features_labels(dino, data_loader, features_dir, labels_dir, device, args):
 
     dino.to(device)
 
@@ -25,7 +27,10 @@ def infer_features_labels(dino, data_loader, features_dir, labels_dir, device):
 
         images = batch["images"].to(device)
 
-        features = dino(images)
+        if args.finetuned:
+            features = dino(images).pooler_output
+        else:
+            features = dino(images)
 
         #np.save(f"origin/images_{bidx}",images.cpu().data)
         np.save(f"{features_dir}/features_{bidx}",features.cpu().data)
@@ -51,10 +56,9 @@ def merge_npy(features_dir, labels_dir, prefix, model_name, output_dir):
     np.save(f"{output_dir}/{model_name}/{prefix['label']}-{model_name}.npy", merged_array(label_files))
 
 
-
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='DINOv2 Inference on CIFAR100')
+    parser = argparse.ArgumentParser(description='DINO Inference on ImageNet100')
 
     parser.add_argument('--device', default='cuda', type=str, help='Device on which to run')
     parser.add_argument('--num-workers', default=8, type=int, help='Number of dataloader workers')
@@ -65,26 +69,18 @@ if __name__ == '__main__':
 
     parser.add_argument("--img_size", default=224, type=int, help="Resolution size")
 
-    parser.add_argument("--model", default="dinov2_vits14", type=str, help="Model name")
+    parser.add_argument("--model", default="dino_vitb16", type=str, help="Model name")
 
     parser.add_argument("--output_dir", default="output-features", type=str, help="Output directory")
 
-    # create parameters is_train
-    #parser.add_argument("--is_train", default=True, action=argparse.BooleanOptionalAction, type=bool, help="is train")
+    parser.add_argument("--finetuned", action='store_true', help='Finetuned model')
+
+    parser.add_argument("--labeled_classes", default=50, type=int, help="Number of labeled classes")
 
     args = parser.parse_args()
 
     if args.seed != 0:
         torch.manual_seed(args.seed)
-
-    # add a little data augmentation
-    #train_transforms = torchvision.transforms.Compose([
-            #torchvision.transforms.RandomResizedCrop((args.img_size, args.img_size), scale=(0.05, 1.0)),
-    #        torchvision.transforms.Resize((args.img_size, args.img_size)),
-    #        torchvision.transforms.ToTensor(),
-            #torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    #        torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    #    ])
 
     # interpolation method = 3 (bicubic)
     interpolation = 3
@@ -103,25 +99,6 @@ if __name__ == '__main__':
                         std=torch.tensor(std))
         ])
 
-    if args.model == "dinov2_vits14":
-
-        dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-
-    elif args.model == "dino_vitb16":
-        dino = torch.hub.load('facebookresearch/dino:main', 'dino_vitb16')
-
-    elif args.model == "dino_vitb8":
-        dino = torch.hub.load('facebookresearch/dino:main', 'dino_vitb8')
-
-    elif args.model == "dino_vits16":
-        dino = torch.hub.load('facebookresearch/dino:main', 'dino_vits16') 
-
-    else:
-        raise ValueError("Model not supported")
-
-
-    model_name = args.model.replace("_","-")
-
     # or load the separate splits if the dataset has train/validation/test splits
     train_dataset = load_dataset("clane9/imagenet-100", split="train")
     valid_dataset = load_dataset("clane9/imagenet-100", split="validation")
@@ -137,11 +114,40 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
     data_loader = train_loader
 
+    if (not args.finetuned):
+
+        if args.model == "dinov2_vits14":
+
+            dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+
+        elif args.model == "dino_vitb16":
+            dino = torch.hub.load('facebookresearch/dino:main', 'dino_vitb16')
+
+        elif args.model == "dino_vitb8":
+            dino = torch.hub.load('facebookresearch/dino:main', 'dino_vitb8')
+
+        elif args.model == "dino_vits16":
+            dino = torch.hub.load('facebookresearch/dino:main', 'dino_vits16') 
+
+        else:
+            raise ValueError("Model not supported")
+
+        model_name = args.model.replace("_","-")
+
+    else:
+
+        # transfrom the dataset to have only 50 classes
+        finetune_dataset = train_dataset.filter(lambda x: x["labels"] < 50)
+
+        dino = finetune_dino(finetune_dataset, 100)
+
+        model_name = args.model.replace("_","-")+"-sl"
+
     features_dir = f"{args.output_dir}/{args.model}_features"
 
     labels_dir = f"{args.output_dir}/{args.model}_labels"
 
-    infer_features_labels(dino, data_loader, features_dir, labels_dir, args.device)
+    infer_features_labels(dino, data_loader, features_dir, labels_dir, args.device, args)
 
     merge_npy(features_dir, labels_dir, {"feature":"features", "label":"labels"}, model_name, args.output_dir)
 
@@ -156,14 +162,8 @@ if __name__ == '__main__':
 
     labels_dir = f"{args.output_dir}/{args.model}_test_labels"
 
-    infer_features_labels(dino, data_loader, features_dir, labels_dir, args.device)
+    infer_features_labels(dino, data_loader, features_dir, labels_dir, args.device, args)
 
     merge_npy(features_dir, labels_dir, {"feature":"test_features", "label":"test_labels"}, model_name, args.output_dir)
-
     
-    
-# usage: python dino-cifar100.py --is_train=False
-
-
-
-
+# usage: python dino-cifar100.py 

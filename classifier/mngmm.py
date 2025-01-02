@@ -29,7 +29,7 @@ from prettytable import PrettyTable
 
 from tqdm import tqdm
 
-from utils.custom_elbo import CustomELBO
+#from utils.custom_elbo import CustomELBO
 
 class MNGMMClassifier():
 
@@ -255,16 +255,16 @@ class MNGMMClassifier():
 
         global_class_covs = self.global_params["class_covs"]
 
-        dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.label_offset])).mean(), 
-                (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
-
-        #dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.num_base])).mean(), 
-        #        (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
 
         if not use_correct_scaling_factor:
+            dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.num_base])).mean(), 
+                (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
             scaling_factor = 1.2
+
         else:
-            scaling_factor = self._correct_scaling_factors(increment, self.label_offset)
+            dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.label_offset])).mean(), 
+                (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
+            scaling_factor = self._correct_scaling_factors(increment, self.num_base)
 
         if(not jnp.isnan(dets[0])):
             if((dets[0] > 1) & (dets[1] > scaling_factor * dets[0])):

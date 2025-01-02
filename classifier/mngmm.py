@@ -51,7 +51,7 @@ class MNGMMClassifier():
         self.writer = SummaryWriter(log_dir)
         self.save_dir = save_dir
 
-    def init_parameters(self, n_epochs, lr, log_dir, save_dir, batch_size):
+    def init_parameters(self, n_epochs, lr, log_dir, save_dir, batch_size, increment=10, base=50):
 
         self.num_steps = n_epochs
 
@@ -61,6 +61,10 @@ class MNGMMClassifier():
         self.save_dir = save_dir
 
         self.writer = SummaryWriter(log_dir)
+
+        self.increment = increment
+
+        self.num_base = base
 
     def model(self, X, y=None, num_classes=2, global_params=None, **kwargs):
         num_features = X.shape[1]
@@ -83,7 +87,7 @@ class MNGMMClassifier():
                 numpyro.sample("obs", base_dist, obs=X_batch)
 
 
-    def run_inference(self, X, y, test_X, test_y, log_prefix=""):
+    def run_inference(self, X, y, test_X, test_y, log_prefix="", use_correct_scaling_factor=False):
 
         init_lr = self.init_lr
 
@@ -108,8 +112,32 @@ class MNGMMClassifier():
 
         for step in tqdm(range(self.num_steps)):
 
-            # to-do : add increment as a parameter
-            early_stop_flag, dets = self.calculate_metrics_on_covariances(self.svi.get_params(self.svi_state), increment=10)
+            early_stop_flag, dets = self.calculate_metrics_on_covariances(self.svi.get_params(self.svi_state), increment=self.increment, use_correct_scaling_factor=use_correct_scaling_factor)
+
+            if(self.with_early_stop & early_stop_flag):
+                print("Early stopping due to covariance convergence.")
+
+                self.svi_state = last_state
+
+                early_stop_flag, dets = self.calculate_metrics_on_covariances(self.svi.get_params(self.svi_state), increment=self.increment, use_correct_scaling_factor=use_correct_scaling_factor)
+                correct, total, acc = self.calculate_acc(self.svi.get_params(self.svi_state), X, y)
+                correct_test, total_test, acc_test = self.calculate_acc(self.svi.get_params(self.svi_state), test_X, test_y)
+
+                self.writer.add_scalar(f"{log_prefix}/Accuracy/train", acc, step) 
+
+                self.writer.add_scalar(f"{log_prefix}/Accuracy/test", acc_test, step)
+
+                self.writer.add_scalar(f"{log_prefix}/LastCovariance/det_0", dets[0].item(), step)
+
+                self.writer.add_scalar(f"{log_prefix}/Covariance/det_0", dets[1].item(), step)
+
+                print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%,",
+                      f" test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}, early_stop_flag = {early_stop_flag}")
+
+                break
+
+
+            last_state = self.svi_state
 
             self.svi_state, loss = self.svi.update(self.svi_state, X= X, y=y, num_classes=self.num_classes, covs_dets =dets)
 
@@ -130,26 +158,7 @@ class MNGMMClassifier():
                 print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%,",
                       f" test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}")
 
-            if(self.with_early_stop & early_stop_flag):
-                print("Early stopping due to covariance convergence.")
-
-                correct, total, acc = self.calculate_acc(self.svi.get_params(self.svi_state), X, y)
-                correct_test, total_test, acc_test = self.calculate_acc(self.svi.get_params(self.svi_state), test_X, test_y)
-
-                self.writer.add_scalar(f"{log_prefix}/Accuracy/train", acc, step) 
-
-                self.writer.add_scalar(f"{log_prefix}/Accuracy/test", acc_test, step)
-
-                self.writer.add_scalar(f"{log_prefix}/LastCovariance/det_0", dets[0].item(), step)
-
-                self.writer.add_scalar(f"{log_prefix}/Covariance/det_0", dets[1].item(), step)
-
-                print(f"Step {step}: loss = {loss:.4f}, train_acc = {correct}/{total}, {acc:.2f}%,",
-                      f" test_acc = {correct_test}/{total_test}, {acc_test:.2f}%, last_cov = {dets[0].item()}, cov = {dets[1].item()}")
-
-                break
-                
-            # Early stopping (pseudo-code)
+             # Early stopping (pseudo-code)
             if step > 100 and abs(prev_loss - loss) < 1e-3:
                 print("Early stopping due to learning convergence.")
                 break
@@ -173,7 +182,7 @@ class MNGMMClassifier():
 
         labels = labels.astype(int)
 
-        self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Flearning")
+        self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Flearning", use_correct_scaling_factor=False)
 
         pred_labels, _ =self._predict(jnp.array(features), self.params)
 
@@ -188,8 +197,9 @@ class MNGMMClassifier():
 
             features = features[novel_idx]
             labels = labels[novel_idx]
+            #labels = pred_labels
 
-            self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning")
+            self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning", use_correct_scaling_factor=True)
         
         self.global_params = copy.deepcopy(self.params)
 
@@ -229,7 +239,12 @@ class MNGMMClassifier():
     def _set_label_offset(self, label_offset):
         self.label_offset = label_offset
 
-    def calculate_metrics_on_covariances(self, params, increment):
+    def _correct_scaling_factors(self, n, total):
+        #return jnp.sqrt((n) / (self.num_classes - total))
+        return jnp.sqrt((n) / (total + n))
+        #return ((n) / (total)) **2
+
+    def calculate_metrics_on_covariances(self, params, increment, use_correct_scaling_factor):
         class_covs = params["class_covs"]
 
         early_stop_flag = False
@@ -243,10 +258,18 @@ class MNGMMClassifier():
         dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.label_offset])).mean(), 
                 (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
 
+        #dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.num_base])).mean(), 
+        #        (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
+
+        if not use_correct_scaling_factor:
+            scaling_factor = 1.2
+        else:
+            scaling_factor = self._correct_scaling_factors(increment, self.label_offset)
+
         if(not jnp.isnan(dets[0])):
-            if((dets[0] > 1) & (dets[1] > dets[0])):
+            if((dets[0] > 1) & (dets[1] > scaling_factor * dets[0])):
                 early_stop_flag = True
-            if((dets[0] < 1) & (dets[1] < dets[0])):
+            if((dets[0] < 1) & (dets[1] < dets[0] / scaling_factor)):
                 early_stop_flag = True
         return early_stop_flag, dets
 

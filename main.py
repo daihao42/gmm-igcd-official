@@ -128,7 +128,7 @@ if __name__ == '__main__':
     # for tinyimagenet
     #s_classifier = Classifier(num_classes=200, num_dim=384, num_samples=0, grid_bounds=(-10., 10.))
 
-    s_classifier.init_parameters(n_epochs=1000, lr=4e-6, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128)
+    s_classifier.init_parameters(n_epochs=1000, lr=4e-6, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128, increment=args.increment, base=args.base)
 
     for i, (train_data, test_data, test_old_data, test_all_data) in enumerate(zip(train_loader, test_loader, test_old_loader, test_all_loader)): 
         if i == 0:

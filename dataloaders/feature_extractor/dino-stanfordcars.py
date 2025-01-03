@@ -58,7 +58,7 @@ def merge_npy(features_dir, labels_dir, prefix, model_name, output_dir):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='DINO Inference on TinyImageNet')
+    parser = argparse.ArgumentParser(description='DINO Inference on CIFAR100')
 
     parser.add_argument('--device', default='cuda', type=str, help='Device on which to run')
     parser.add_argument('--num-workers', default=8, type=int, help='Number of dataloader workers')
@@ -99,8 +99,8 @@ if __name__ == '__main__':
         ])
 
     # or load the separate splits if the dataset has train/validation/test splits
-    train_dataset = load_dataset("zh-plus/tiny-imagenet", split="train")
-    valid_dataset = load_dataset("zh-plus/tiny-imagenet", split="valid")
+    train_dataset = load_dataset("tanganke/stanford_cars", split="train")
+    valid_dataset = load_dataset("tanganke/stanford_cars", split="test")
 
     def trans_func(examples):
         images= [train_transforms(img) for img in examples["image"]]
@@ -136,9 +136,9 @@ if __name__ == '__main__':
     else:
 
         # transfrom the dataset to have only 50 classes
-        finetune_dataset = train_dataset.filter(lambda x: x["labels"] < 100)
+        finetune_dataset = train_dataset.filter(lambda x: x["labels"] < 95)
 
-        dino = finetune_dino(finetune_dataset, 200)
+        dino = finetune_dino(finetune_dataset, 195)
 
         model_name = args.model.replace("_","-")+"-sl"
 
@@ -165,4 +165,4 @@ if __name__ == '__main__':
 
     merge_npy(features_dir, labels_dir, {"feature":"test_features", "label":"test_labels"}, model_name, args.output_dir)
     
-# usage: python dino-cifar100.py
+# usage: python dino-cifar100.py 

@@ -2,7 +2,7 @@
 from utils import dataloader
 from utils.dataloader import ClassIncrementalLoader
 
-class CIFAR100Loader():
+class StanfordCarsLoader():
     def __init__(self, args):
         self.args = args
 
@@ -55,11 +55,11 @@ class CIFAR100Loader():
 
     # Happy-comparison
     def makeHappyLoader(self):
-        base = 50
-        increment = 10
-        num_labeled = 20000
-        num_novel_inc = 400
-        num_known_inc = 25
+        base = 95
+        increment = 20
+        num_labeled = 3040
+        num_novel_inc = 32
+        num_known_inc = 8
 
         loader = dataloader.StrictPerClassIncrementalLoader(data_dir=self.args.data_dir, pretrained_model_name=self.args.pretrained_model_name, base=base, increment=increment, num_labeled=num_labeled, num_novel_inc=num_novel_inc, num_known_inc=num_known_inc)
 
@@ -70,14 +70,13 @@ class CIFAR100Loader():
         
         return train_loader, test_novel_loader, test_old_loader, test_all_loader
 
-
     # Vin-comparison
     def makeVinLoader(self):
-        base = 10
-        increment = 10
-        num_labeled = 4000
-        num_novel_inc = 400
-        num_known_inc = 25
+        base = 15
+        increment = 20
+        num_labeled = 480
+        num_novel_inc = 32
+        num_known_inc = 8
 
         loader = dataloader.StrictPerClassIncrementalLoader(data_dir=self.args.data_dir, pretrained_model_name=self.args.pretrained_model_name, base=base, increment=increment, num_labeled=num_labeled, num_novel_inc=num_novel_inc, num_known_inc=num_known_inc)
 

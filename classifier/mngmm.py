@@ -51,7 +51,7 @@ class MNGMMClassifier():
         self.writer = SummaryWriter(log_dir)
         self.save_dir = save_dir
 
-    def init_parameters(self, n_epochs, lr, log_dir, save_dir, batch_size, increment=10, base=50):
+    def init_parameters(self, n_epochs, lr, log_dir, save_dir, batch_size, increment=10, base=50, scaling_factor=1.2, use_correct_scaling_factor=True):
 
         self.num_steps = n_epochs
 
@@ -65,6 +65,10 @@ class MNGMMClassifier():
         self.increment = increment
 
         self.num_base = base
+
+        self.scaling_factor = scaling_factor
+
+        self.use_correct_scaling_factor = use_correct_scaling_factor
 
     def model(self, X, y=None, num_classes=2, global_params=None, **kwargs):
         num_features = X.shape[1]
@@ -110,11 +114,13 @@ class MNGMMClassifier():
 
         self.svi_state = self.svi.init(random.PRNGKey(0), X = X, y= y, num_classes=self.num_classes, global_params=self.global_params)
 
+        last_state = None
+
         for step in tqdm(range(self.num_steps)):
 
             early_stop_flag, dets = self.calculate_metrics_on_covariances(self.svi.get_params(self.svi_state), increment=self.increment, use_correct_scaling_factor=use_correct_scaling_factor)
 
-            if(self.with_early_stop & early_stop_flag):
+            if(self.with_early_stop & early_stop_flag & (last_state is not None)):
                 print("Early stopping due to covariance convergence.")
 
                 self.svi_state = last_state
@@ -199,7 +205,7 @@ class MNGMMClassifier():
             labels = labels[novel_idx]
             #labels = pred_labels
 
-            self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning", use_correct_scaling_factor=True)
+            self.params = self.run_inference(jnp.array(features), jnp.array(labels), jnp.array(test_features), jnp.array(test_labels), log_prefix=f"stage_{current_stage}_Slearning", use_correct_scaling_factor=self.use_correct_scaling_factor)
         
         self.global_params = copy.deepcopy(self.params)
 
@@ -259,7 +265,8 @@ class MNGMMClassifier():
         if not use_correct_scaling_factor:
             dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.num_base])).mean(), 
                 (jax.vmap(jnp.linalg.det)(class_covs[self.label_offset: self.label_offset + increment])).mean()]
-            scaling_factor = 1.2
+            #scaling_factor = 1.2
+            scaling_factor = self.scaling_factor
 
         else:
             dets = [(jax.vmap(jnp.linalg.det)(global_class_covs[:self.label_offset])).mean(), 

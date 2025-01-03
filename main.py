@@ -17,6 +17,7 @@ import jax
 from dataloaders.cifar100 import CIFAR100Loader
 from dataloaders.tinyimagenet import TinyImageNetLoader
 from dataloaders.imagenet100 import ImageNet100Loader
+from dataloaders.cub200 import CUB200Loader
 
 from classifier.pegmm import PEGMMClassifier
 from classifier.mpegmm import MPEGMMClassifier
@@ -62,20 +63,31 @@ def Classifier_alg(alg):
     else:
         raise ValueError('Classifier algorithm not supported')
 
+def load_mode(args, loader):
+    if args.load_mode == 'happy':
+        return loader.makeHappyLoader()
+    elif args.load_mode == 'vin':
+        return loader.makeVinLoader()
+    else:
+        raise ValueError('Load mode not supported')
 
 def Dataloader(args):
     # make data loader
     if args.dataset == 'cifar100':
         cifar100loader = CIFAR100Loader(args = args)
-        train_loader, test_loader, test_old_loader, test_all_loader = cifar100loader.makeHappyLoader()
+        train_loader, test_loader, test_old_loader, test_all_loader = load_mode(args,cifar100loader)
 
     elif args.dataset == 'tinyimagenet':
         tinyimagenetloader = TinyImageNetLoader(args = args)
-        train_loader, test_loader, test_old_loader, test_all_loader = tinyimagenetloader.makeHappyLoader()
+        train_loader, test_loader, test_old_loader, test_all_loader = load_mode(args, tinyimagenetloader)
 
     elif args.dataset == 'imagenet100':
         imageNet100Loader = ImageNet100Loader(args = args)
-        train_loader, test_loader, test_old_loader, test_all_loader = imageNet100Loader.makeHappyLoader()
+        train_loader, test_loader, test_old_loader, test_all_loader = load_mode(args, imageNet100Loader)
+
+    elif args.dataset == 'cub200':
+        cub200Loader = CUB200Loader(args = args)
+        train_loader, test_loader, test_old_loader, test_all_loader = load_mode(args, cub200Loader)
     
     else:
         raise ValueError('Dataset not supported')
@@ -94,6 +106,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generalized Class Incremental Learning')
     parser.add_argument('--dataset', type=str, default='cifar100', help='Dataset to learn')
     parser.add_argument('--data_dir', type=str, default='datasets/cifar100', help='Directory to the data')
+    parser.add_argument('--load_mode', type=str, default='happy', help='Dataset Loader Mode (happy / vin)')
     parser.add_argument('--pretrained_model_name', type=str, default='dino-vitb16', help='Name of the model')
     parser.add_argument('--base', type=int, default=50, help='Number of base classes')
     parser.add_argument('--increment', type=int, default=10, help='Number of incremental classes')
@@ -104,6 +117,10 @@ if __name__ == '__main__':
     parser.add_argument('--num_classes', type=int, default=100, help='Number of classes for the classifier')
     parser.add_argument('--num_dim', type=int, default=384, help='Number of features\' dim for the classifier')
     parser.add_argument('--with_early_stop', default=True, action=argparse.BooleanOptionalAction, help='Whether to use early stop')
+    parser.add_argument('--use_correct_scaling_factor', default=True, action=argparse.BooleanOptionalAction, help='Whether to use correct scaling factor')
+    parser.add_argument("--n_epochs", type=int, default=1000, help="Number of epochs")
+    parser.add_argument("--lr", type=float, default=4e-6, help="Learning rate")
+    parser.add_argument("--scaling-factor", type=float, default=1.2, help="Scaling factor for learning from arbitary")
     args = parser.parse_args()
 
     # Set the random seed
@@ -128,7 +145,7 @@ if __name__ == '__main__':
     # for tinyimagenet
     #s_classifier = Classifier(num_classes=200, num_dim=384, num_samples=0, grid_bounds=(-10., 10.))
 
-    s_classifier.init_parameters(n_epochs=1000, lr=4e-6, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128, increment=args.increment, base=args.base)
+    s_classifier.init_parameters(n_epochs=args.n_epochs, lr=args.lr, log_dir=f"logs/{log_saved_dir}/log/stage0", save_dir=f"logs/{log_saved_dir}/saved_models/stage0", batch_size=128, increment=args.increment, base=args.base, scaling_factor=args.scaling_factor, use_correct_scaling_factor=args.use_correct_scaling_factor)
 
     for i, (train_data, test_data, test_old_data, test_all_data) in enumerate(zip(train_loader, test_loader, test_old_loader, test_all_loader)): 
         if i == 0:
